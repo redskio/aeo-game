@@ -251,6 +251,27 @@
   .history-item { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--muted); cursor: pointer; }
   .history-item:hover { color: var(--navy); }
   .history-q { font-weight: 600; color: var(--text); }
+
+  /* AEO Analysis */
+  .analysis-section { margin-top: 28px; }
+  .analysis-title { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .analysis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .analysis-card {
+    background: white;
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-top: 4px solid #ccc;
+  }
+  .analysis-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .analysis-total { font-size: 22px; font-weight: 900; }
+  .analysis-rank { font-size: 18px; }
+  .metric-row { margin-bottom: 7px; }
+  .metric-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .metric-label span:last-child { font-weight: 700; color: var(--text); }
+  .metric-bar-bg { background: #EDF2F7; border-radius: 4px; height: 6px; }
+  .metric-bar-fill { height: 6px; border-radius: 4px; transition: width 0.6s ease; }
+  .analysis-comment { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; border-top: 1px solid var(--border); padding-top: 8px; }
 </style>
 </head>
 <body>
@@ -329,6 +350,11 @@
       <div style="margin-bottom:8px; font-size:13px; color:var(--muted); font-weight:600;">AI 답변</div>
       <div class="answer-box" id="answer-text"></div>
       <div class="citation-summary" id="citation-summary"></div>
+    </div>
+
+    <div class="analysis-section" id="analysis-section" style="display:none;">
+      <div class="analysis-title">📊 AEO 친화도 분석 <span style="font-size:12px;font-weight:400;color:var(--muted);">— 이 질문 기준 채점</span></div>
+      <div class="analysis-grid" id="analysis-grid"></div>
     </div>
 
     <div class="leaderboard" id="leaderboard" style="display:none;">
@@ -535,7 +561,7 @@ async function doSearch() {
     return;
   }
 
-  const { answer, citations, scores } = await res.json();
+  const { answer, citations, scores, analysis } = await res.json();
 
   // Render answer with highlighted citations
   let html = escHtml(answer).replace(/\[출처:\s*팀\s*(\d+)\]/g, (match, n) =>
@@ -561,7 +587,46 @@ async function doSearch() {
   });
   renderLeaderboard();
 
+  renderAnalysis(analysis || {});
   loadHistory();
+}
+
+function renderAnalysis(analysis) {
+  const section = document.getElementById('analysis-section');
+  const grid = document.getElementById('analysis-grid');
+  const entries = Object.entries(analysis);
+  if (entries.length === 0) { section.style.display = 'none'; return; }
+
+  const METRICS = ['질문직결성','첫문장직답','인용가능성','구체성','간결성'];
+  const COLORS = {1:'#E74C3C',2:'#3498DB',3:'#27AE60',4:'#F39C12',5:'#9B59B6',6:'#1ABC9C',7:'#E67E22',8:'#2980B9',9:'#C0392B',10:'#8E44AD'};
+  const MEDALS = ['🥇','🥈','🥉'];
+
+  const sorted = entries.sort((a,b) => (b[1].총점||0) - (a[1].총점||0));
+
+  grid.innerHTML = sorted.map(([team, s], i) => {
+    const color = COLORS[team] || '#888';
+    const medal = MEDALS[i] || `${i+1}위`;
+    const total = s.총점 || 0;
+    const bars = METRICS.map(m => {
+      const score = s[m] || 0;
+      return `<div class="metric-row">
+        <span class="metric-label">${m}</span>
+        <div class="metric-bar-bg"><div class="metric-bar-fill" style="width:${score*10}%;background:${color}"></div></div>
+        <span style="font-size:11px;color:var(--muted);min-width:24px;text-align:right">${score}/10</span>
+      </div>`;
+    }).join('');
+    return `<div class="analysis-card" style="border-top:3px solid ${color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:700;color:${color}">팀 ${team}</span>
+        <span style="font-size:20px">${medal}</span>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:${color};margin-bottom:10px">${total}<span style="font-size:13px;font-weight:400;color:var(--muted)">/50</span></div>
+      ${bars}
+      <div class="analysis-comment">${s.한줄평 || ''}</div>
+    </div>`;
+  }).join('');
+
+  section.style.display = 'block';
 }
 
 function renderLeaderboard() {
