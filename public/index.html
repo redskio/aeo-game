@@ -347,7 +347,6 @@
 
 <script>
 const TEAM_COLORS = ['','#E74C3C','#3498DB','#27AE60','#F39C12','#9B59B6','#1ABC9C','#E67E22','#2980B9','#C0392B','#8E44AD'];
-const SAMPLE_QUERIES = ['AEO란 무엇인가요?','두괄식 콘텐츠가 AI 인용에 유리한 이유는?','FAQ 구조 작성법을 알려주세요','Schema.org 마크업이 필요한 이유는?','AI 검색에서 브랜드를 노출하려면?'];
 
 let currentTeam = localStorage.getItem('aeo_team') ? parseInt(localStorage.getItem('aeo_team')) : null;
 let totalScores = {};
@@ -358,7 +357,6 @@ if (currentTeam) {
   showLoggedIn();
   showView('upload');
 }
-buildSampleQueries();
 loadHistory();
 
 function buildTeamGrid() {
@@ -406,7 +404,7 @@ function showView(name) {
   const navEl = document.getElementById('nav-' + name);
   if (navEl) navEl.classList.add('active');
   if (name === 'contents') loadContents();
-  if (name === 'search') loadHistory();
+  if (name === 'search') { buildSampleQueries(); loadHistory(); }
   window.scrollTo(0, 0);
   return false;
 }
@@ -482,11 +480,30 @@ async function clearAll() {
   toast('초기화 완료');
 }
 
-function buildSampleQueries() {
+async function buildSampleQueries() {
   const el = document.getElementById('sample-queries');
-  SAMPLE_QUERIES.forEach(q => {
+  el.innerHTML = '<span style="font-size:12px; color:var(--muted); align-self:center;">예시 질문:</span>';
+
+  const res = await fetch('/api/contents');
+  const contents = await res.json();
+
+  if (contents.length === 0) {
+    el.innerHTML += '<span style="font-size:13px;color:var(--muted);">콘텐츠를 먼저 업로드하세요</span>';
+    return;
+  }
+
+  // 제목을 질문 형식으로 변환
+  const queries = contents.map(c => {
+    const t = c.title.replace(/[?？]$/, '').trim();
+    if (t.endsWith('이란') || t.endsWith('란')) return t + ' 무엇인가요?';
+    if (t.endsWith('방법') || t.endsWith('하기')) return t + '를 알려주세요';
+    if (t.endsWith('이유') || t.endsWith('이점')) return t + '는 무엇인가요?';
+    return t + '에 대해 설명해주세요';
+  }).slice(0, 5);
+
+  queries.forEach(q => {
     const chip = document.createElement('button');
-    chip.style.cssText = 'background:#EDF2F7;border:none;border-radius:16px;padding:5px 14px;font-size:13px;cursor:pointer;color:#4A5568;font-family:inherit;';
+    chip.style.cssText = 'background:#EDF2F7;border:none;border-radius:16px;padding:5px 14px;font-size:13px;cursor:pointer;color:#4A5568;font-family:inherit;white-space:nowrap;';
     chip.textContent = q;
     chip.onclick = () => { document.getElementById('search-input').value = q; doSearch(); };
     el.appendChild(chip);
