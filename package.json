@@ -1,0 +1,14 @@
+{
+  "name": "aeo-game",
+  "version": "1.0.0",
+  "description": "AEO 콘텐츠 경쟁 테스트 서비스",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.51.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
