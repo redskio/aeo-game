@@ -505,7 +505,7 @@ async function deleteContent(id) {
 }
 
 async function clearAll() {
-  if (!confirm('모든 콘텐츠와 검색 기록을 초기화하시겠습니까?')) return;
+  if (!confirm(COHORT.replace('agm', 'AGM ') + '기의 모든 콘텐츠와 검색 기록을 초기화하시겠습니까?\n(다른 기수 데이터는 그대로 유지됩니다)')) return;
   await fetch(API + '/contents', { method: 'DELETE' });
   loadContents();
   toast('초기화 완료');
