@@ -506,7 +506,10 @@ async function deleteContent(id) {
 
 async function clearAll() {
   if (!confirm(COHORT.replace('agm', 'AGM ') + '기의 모든 콘텐츠와 검색 기록을 초기화하시겠습니까?\n(다른 기수 데이터는 그대로 유지됩니다)')) return;
-  await fetch(API + '/contents', { method: 'DELETE' });
+  const password = prompt('초기화 비밀번호를 입력하세요');
+  if (password === null) return;
+  const res = await fetch(API + '/contents', { method: 'DELETE', headers: { 'X-Reset-Password': password } });
+  if (!res.ok) { alert('비밀번호가 틀렸습니다. 초기화하지 않았습니다.'); return; }
   loadContents();
   toast('초기화 완료');
 }

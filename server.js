@@ -66,6 +66,9 @@ api.delete('/contents/:id', (req, res) => {
 });
 
 api.delete('/contents', (req, res) => {
+  if (!process.env.RESET_PASSWORD || req.get('X-Reset-Password') !== process.env.RESET_PASSWORD) {
+    return res.status(403).json({ error: '비밀번호가 틀렸습니다' });
+  }
   save(req.params.cohort, { contents: [], searches: [] });
   res.json({ ok: true });
 });
