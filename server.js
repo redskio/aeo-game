@@ -19,6 +19,7 @@ function load() {
 }
 
 function save(data) {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
