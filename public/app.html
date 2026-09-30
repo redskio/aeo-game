@@ -334,7 +334,7 @@
   <!-- View: Search -->
   <div class="view" id="view-search">
     <div class="page-title">AI 검색 테스트</div>
-    <div class="page-sub">질문을 입력하면 Claude가 업로드된 팀 콘텐츠에서 답변을 찾습니다</div>
+    <div class="page-sub">질문을 입력하면 AI가 업로드된 팀 콘텐츠만 참고해 답변하고, 참고한 팀을 출처로 표시합니다</div>
 
     <div class="card">
       <div class="search-input-wrap">
@@ -359,8 +359,23 @@
 
     <div class="leaderboard" id="leaderboard" style="display:none;">
       <h3>🏆 인용 횟수 순위</h3>
+      <div style="font-size:12px;color:var(--muted);margin:-4px 0 10px" id="lb-sub"></div>
       <div id="lb-list"></div>
     </div>
+
+    <details class="card" style="margin-top:24px;" id="criteria-panel">
+      <summary style="cursor:pointer;font-weight:700;font-size:14px;">📐 평가 기준 (공식 가이드 근거)</summary>
+      <div style="font-size:12px;color:var(--muted);margin:10px 0 4px;line-height:1.6">
+        <b>순위</b>: 검색 한 번에 인용된 팀은 1회로 셉니다 (한 답변에서 여러 번 언급돼도 1회). 이 기수에서 한 모든 검색이 합산됩니다.<br>
+        <b>AEO 친화도 점수</b>: 아래 5개 항목, 각 10점 만점. 팀마다 질문에 가장 잘 맞는 콘텐츠 1개를 골라 채점합니다.
+      </div>
+      <div id="criteria-list"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6">출처:
+        <a href="https://about.ads.microsoft.com/en/blog/post/october-2025/optimizing-your-content-for-inclusion-in-ai-search-answers" target="_blank" rel="noopener">Microsoft, Optimizing Your Content for Inclusion in AI Search Answers (2025.10)</a> ·
+        <a href="https://developers.google.com/search/docs/fundamentals/creating-helpful-content" target="_blank" rel="noopener">Google Search Central, Creating helpful, reliable, people-first content</a> ·
+        <a href="https://developers.google.com/search/docs/appearance/ai-features" target="_blank" rel="noopener">Google Search Central, AI features and your website</a>
+      </div>
+    </details>
 
     <div style="margin-top:32px;" id="history-section" style="display:none;">
       <div style="font-size:14px; font-weight:700; color:var(--muted); margin-bottom:10px;">최근 검색</div>
@@ -380,7 +395,8 @@ document.addEventListener('DOMContentLoaded', () => { document.getElementById('c
 const TEAM_COLORS = ['','#E74C3C','#3498DB','#27AE60','#F39C12','#9B59B6','#1ABC9C','#E67E22','#2980B9','#C0392B','#8E44AD'];
 
 let currentTeam = localStorage.getItem(TEAM_KEY) ? parseInt(localStorage.getItem(TEAM_KEY)) : null;
-let totalScores = {};
+let METRICS = [];
+let historyQueries = [];
 
 // Init
 buildTeamGrid();
@@ -389,6 +405,8 @@ if (currentTeam) {
   showView('upload');
 }
 loadHistory();
+loadCriteria();
+loadLeaderboard();
 
 function buildTeamGrid() {
   const grid = document.getElementById('team-grid');
@@ -589,11 +607,7 @@ async function doSearch() {
 
   document.getElementById('search-result').style.display = 'block';
 
-  // Update leaderboard
-  Object.entries(scores).forEach(([team, cnt]) => {
-    totalScores[team] = (totalScores[team] || 0) + cnt;
-  });
-  renderLeaderboard();
+  loadLeaderboard();
 
   renderAnalysis(analysis || {});
   loadHistory();
@@ -605,7 +619,6 @@ function renderAnalysis(analysis) {
   const entries = Object.entries(analysis);
   if (entries.length === 0) { section.style.display = 'none'; return; }
 
-  const METRICS = ['질문직결성','첫문장직답','인용가능성','구체성','간결성'];
   const COLORS = {1:'#E74C3C',2:'#3498DB',3:'#27AE60',4:'#F39C12',5:'#9B59B6',6:'#1ABC9C',7:'#E67E22',8:'#2980B9',9:'#C0392B',10:'#8E44AD'};
   const MEDALS = ['🥇','🥈','🥉'];
 
@@ -613,7 +626,8 @@ function renderAnalysis(analysis) {
 
   grid.innerHTML = sorted.map(([team, s], i) => {
     const color = COLORS[team] || '#888';
-    const medal = MEDALS[i] || `${i+1}위`;
+    const rank = sorted.findIndex(([, x]) => (x.총점||0) === (s.총점||0));
+    const medal = MEDALS[rank] || `${rank+1}위`;
     const total = s.총점 || 0;
     const bars = METRICS.map(m => {
       const score = s[m] || 0;
@@ -630,37 +644,57 @@ function renderAnalysis(analysis) {
       </div>
       <div style="font-size:22px;font-weight:800;color:${color};margin-bottom:10px">${total}<span style="font-size:13px;font-weight:400;color:var(--muted)">/50</span></div>
       ${bars}
-      <div class="analysis-comment">${s.한줄평 || ''}</div>
+      <div class="analysis-comment" style="margin-bottom:4px">📄 ${escHtml(String(s.근거콘텐츠 || '-'))}</div>
+      <div class="analysis-comment">${escHtml(String(s.한줄평 || ''))}</div>
     </div>`;
   }).join('');
 
   section.style.display = 'block';
 }
 
-function renderLeaderboard() {
-  if (Object.keys(totalScores).length === 0) return;
+async function loadCriteria() {
+  const res = await fetch(API + '/criteria');
+  const list = await res.json();
+  METRICS = list.map(c => c.name);
+  document.getElementById('criteria-list').innerHTML = list.map((c, i) => `
+    <div style="border-top:1px solid var(--border);padding:10px 0;font-size:13px;line-height:1.6">
+      <b>${i + 1}. ${escHtml(c.name)}</b> — ${escHtml(c.question)}
+      <div style="font-size:12px;color:var(--muted)">${escHtml(c.levels)}</div>
+      <div style="font-size:11px;color:var(--muted)">근거: ${escHtml(c.source)}</div>
+    </div>`).join('');
+}
+
+async function loadLeaderboard() {
+  const res = await fetch(API + '/leaderboard');
+  const { totalSearches, counts } = await res.json();
+  if (totalSearches === 0) { document.getElementById('leaderboard').style.display = 'none'; return; }
+  document.getElementById('lb-sub').textContent = `이 기수 전체 검색 ${totalSearches}회 기준 · 모든 참여자에게 같은 순위가 보입니다`;
   const el = document.getElementById('lb-list');
-  const sorted = Object.entries(totalScores).sort((a,b) => b[1]-a[1]);
-  el.innerHTML = sorted.map(([team, score], i) => `
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  el.innerHTML = sorted.map(([team, score]) => {
+    const i = sorted.findIndex(([, x]) => x === score);
+    return `
     <div class="lb-row">
       <div class="lb-rank">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
       <div class="team-chip tc${team}" style="width:56px;justify-content:center;">팀 ${team}</div>
       <div class="lb-name text-tc${team}">팀 ${team}</div>
-      <div class="lb-score">${score}회 인용</div>
+      <div class="lb-score">${score}회 인용 (${Math.round(score / totalSearches * 100)}%)</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   document.getElementById('leaderboard').style.display = 'block';
 }
 
 async function loadHistory() {
   const res = await fetch(API + '/searches');
   const list = await res.json();
+  historyQueries = list.slice(0,10).map(s => s.query);
   const el = document.getElementById('history-list');
   const section = document.getElementById('history-section');
   if (list.length === 0) { section.style.display = 'none'; return; }
   section.style.display = 'block';
-  el.innerHTML = list.slice(0,10).map(s => `
-    <div class="history-item" onclick="document.getElementById('search-input').value='${escAttr(s.query)}'; doSearch()">
+  el.innerHTML = list.slice(0,10).map((s, i) => `
+    <div class="history-item" data-i="${i}" onclick="document.getElementById('search-input').value = historyQueries[this.dataset.i]; document.getElementById('search-input').focus()">
       <div class="history-q">${escHtml(s.query)}</div>
       <div style="margin-top:3px;">${s.citations.map(t=>`<span class="citation-badge tc${t}" style="font-size:11px;padding:1px 8px;">팀${t}</span>`).join(' ')}</div>
     </div>
@@ -670,7 +704,6 @@ async function loadHistory() {
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escAttr(s) { return s.replace(/'/g,"\\'"); }
 
 function toast(msg, dur=2500) {
   const el = document.getElementById('toast');
