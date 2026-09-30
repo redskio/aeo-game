@@ -8,60 +8,74 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static('public'));
 
-const DATA_FILE = path.join(process.env.DATA_DIR || __dirname, 'data.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const COHORTS = ['agm3', 'agm4'];
 
-function load() {
+const dataFile = cohort => path.join(DATA_DIR, `data-${cohort}.json`);
+
+function load(cohort) {
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    return JSON.parse(fs.readFileSync(dataFile(cohort), 'utf8'));
   } catch {
     return { contents: [], searches: [] };
   }
 }
 
-function save(data) {
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+function save(cohort, data) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(dataFile(cohort), JSON.stringify(data, null, 2));
 }
+
+const api = express.Router({ mergeParams: true });
+app.use('/api/:cohort', (req, res, next) => {
+  if (!COHORTS.includes(req.params.cohort)) return res.status(404).json({ error: '없는 기수' });
+  next();
+}, api);
+
+app.get('/:cohort', (req, res, next) => {
+  if (!COHORTS.includes(req.params.cohort)) return next();
+  res.sendFile(path.join(__dirname, 'public', 'app.html'));
+});
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // --- Content APIs ---
-app.get('/api/contents', (req, res) => {
-  const { contents } = load();
+api.get('/contents', (req, res) => {
+  const { contents } = load(req.params.cohort);
   res.json(contents);
 });
 
-app.post('/api/contents', (req, res) => {
+api.post('/contents', (req, res) => {
   const { team, title, body } = req.body;
   if (!team || !title || !body) return res.status(400).json({ error: '필드 누락' });
-  const data = load();
+  const data = load(req.params.cohort);
   const item = { id: Date.now(), team: parseInt(team), title, body, createdAt: new Date().toISOString() };
   data.contents.push(item);
-  save(data);
+  save(req.params.cohort, data);
   res.json(item);
 });
 
-app.delete('/api/contents/:id', (req, res) => {
+api.delete('/contents/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const data = load();
+  const data = load(req.params.cohort);
   const idx = data.contents.findIndex(c => c.id === id);
   if (idx === -1) return res.status(404).json({ error: '없음' });
   data.contents.splice(idx, 1);
-  save(data);
+  save(req.params.cohort, data);
   res.json({ ok: true });
 });
 
-app.delete('/api/contents', (req, res) => {
-  save({ contents: [], searches: [] });
+api.delete('/contents', (req, res) => {
+  save(req.params.cohort, { contents: [], searches: [] });
   res.json({ ok: true });
 });
 
 // --- Search API ---
-app.post('/api/search', async (req, res) => {
+api.post('/search', async (req, res) => {
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: '질문 없음' });
 
-  const { contents, searches } = load();
+  const { contents, searches } = load(req.params.cohort);
 
   if (contents.length === 0) {
     return res.json({ answer: '업로드된 콘텐츠가 없습니다. 먼저 팀 콘텐츠를 업로드하세요.', citations: [], scores: {} });
@@ -163,10 +177,10 @@ ${contextText}
       createdAt: new Date().toISOString()
     };
 
-    const data = load();
+    const data = load(req.params.cohort);
     data.searches.unshift(record);
     if (data.searches.length > 50) data.searches.pop();
-    save(data);
+    save(req.params.cohort, data);
 
     res.json({ answer, citations: [...citedTeams], scores, analysis });
   } catch (err) {
@@ -175,8 +189,8 @@ ${contextText}
   }
 });
 
-app.get('/api/searches', (req, res) => {
-  const { searches } = load();
+api.get('/searches', (req, res) => {
+  const { searches } = load(req.params.cohort);
   res.json(searches.slice(0, 20));
 });
 
